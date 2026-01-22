@@ -15,16 +15,19 @@ def clean_currency(value):
     except:
         return 0
 
-# --- KONEKSI KE GOOGLE SHEETS (MODE ONLINE) ---
+# --- KONEKSI KE GOOGLE SHEETS (VERSI ONLINE + FIX ERROR) ---
 def get_sheet_data():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     
-    # KITA UBAH BAGIAN INI:
-    # Mengambil credentials dari Streamlit Secrets (Aman untuk Online)
-    # Pastikan nanti di dashboard online kamu setting secrets-nya
-    creds_dict = st.secrets["gcp_service_account"]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    # Ambil secrets dari Streamlit Cloud
+    # Kita ubah jadi dictionary biasa dulu biar bisa diedit
+    creds_dict = dict(st.secrets["gcp_service_account"])
     
+    # 🔥 JURUS PERBAIKAN KUNCI (FIX INCORRECT PADDING) 🔥
+    # Ini mengubah tulisan "\n" menjadi karakter Enter yang asli
+    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+    
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
     
     # ID Sheet Kamu
