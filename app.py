@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import json  # <--- Kita butuh ini sekarang
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="Ridho Store Admin", page_icon="🚀", layout="wide")
@@ -15,17 +16,16 @@ def clean_currency(value):
     except:
         return 0
 
-# --- KONEKSI KE GOOGLE SHEETS (VERSI ONLINE + FIX ERROR) ---
+# --- KONEKSI KE GOOGLE SHEETS (JURUS PAMUNGKAS) ---
 def get_sheet_data():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     
-    # Ambil secrets dari Streamlit Cloud
-    # Kita ubah jadi dictionary biasa dulu biar bisa diedit
-    creds_dict = dict(st.secrets["gcp_service_account"])
+    # --- PERUBAHAN DISINI ---
+    # Kita ambil string JSON mentah dari Secrets
+    json_string = st.secrets["files"]["gsheet_json"]
     
-    # 🔥 JURUS PERBAIKAN KUNCI (FIX INCORRECT PADDING) 🔥
-    # Ini mengubah tulisan "\n" menjadi karakter Enter yang asli
-    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+    # Kita suruh Python mengubah string itu jadi Dictionary (Otomatis memperbaiki format)
+    creds_dict = json.loads(json_string)
     
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
@@ -44,18 +44,9 @@ try:
     df = pd.DataFrame(data)
 
     # 🔥 JURUS ANTI SPASI HANTU 🔥
-    # Kode ini membuang spasi di depan/belakang nama kolom otomatis
     df.columns = df.columns.str.strip()
 
-    # --- DEBUGGER (PENTING BUAT CEK NAMA KOLOM) ---
-    # Kalau masih error, lihat bagian kuning di layar aplikasi
-    with st.expander("🔍 KLIK DISINI UNTUK CEK NAMA KOLOM ASLI"):
-        st.write("Python membaca kolom kamu sebagai berikut:")
-        st.write(df.columns.tolist())
-        st.info("Pastikan nama di bawah (Mapping) sama persis dengan list di atas.")
-
     # --- MAPPING KOLOM ---
-    # Sesuaikan teks di kanan dengan yang muncul di Debugger
     col_layanan = 'Pilih Layanan'
     col_target  = 'Target / Link'
     col_jumlah  = 'Jumlah Order'
@@ -64,26 +55,13 @@ try:
     col_modal   = 'Modal'
     col_profit  = 'Profit'
 
-    # Cek apakah kolom WAJIB ada
-    wajib_ada = [col_total, col_status]
-    missing = [c for c in wajib_ada if c not in df.columns]
-    
-    if missing:
-        st.error(f"❌ KOLOM HILANG: {missing}")
-        st.warning("Cek nama kolom di Google Sheet, mungkin ada typo atau beda huruf besar/kecil.")
-        st.stop() # Berhenti dulu biar gak crash
-
-    # --- LOGIC APLIKASI ---
-    # 1. Bersihkan Angka
+    # Logic Aplikasi
     df['clean_total'] = df[col_total].apply(clean_currency)
-    
-    # 2. Siapkan Kolom Modal & Profit (Kalau belum ada di sheet)
     if col_modal not in df.columns: df[col_modal] = 0
     if col_profit not in df.columns: df[col_profit] = 0
     df[col_modal] = pd.to_numeric(df[col_modal], errors='coerce').fillna(0)
     df[col_profit] = pd.to_numeric(df[col_profit], errors='coerce').fillna(0)
 
-    # 3. Metrics
     total_omzet = df['clean_total'].sum()
     total_profit = df[col_profit].sum()
     pending_df = df[(df[col_status].str.upper() == 'PENDING') | (df[col_status] == '')]
@@ -116,7 +94,6 @@ try:
                     if st.button("✅ SUKSES", key=f"b_{index}"):
                         with st.spinner('Updating...'):
                             try:
-                                # Cari lokasi kolom
                                 headers = [h.strip() for h in sheet.row_values(1)]
                                 r = index + 2
                                 sheet.update_cell(r, headers.index(col_status)+1, "SUCCESS")
@@ -129,4 +106,4 @@ try:
 
 except Exception as e:
     st.error("TERJADI ERROR:")
-    st.code(e)
+    st.write(e)
