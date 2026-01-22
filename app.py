@@ -4,7 +4,8 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import urllib.parse
 import requests 
-import html # <--- 1. LIBRARY BARU UNTUK BENERIN LINK
+import html
+import math # Library untuk pembulatan angka
 
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="Ridho Store Admin", page_icon="🚀", layout="wide")
@@ -24,22 +25,26 @@ if input_pass != password_rahasia:
     st.warning("⛔ Masukkan password untuk akses Dashboard.")
     st.stop()
 
-# ==========================================
-# 🔥 MAPPING LAYANAN MEDANPEDIA 🔥
-# ==========================================
+# =================================================================
+# 🔥 MAPPING LAYANAN & HARGA MODAL (LOGIKA BARU) 🔥
+# =================================================================
+# Struktur Baru: "Nama": {"id": ID_MEDANPEDIA, "harga": HARGA_PER_1000}
+
 MAPPING_LAYANAN = {
     # --- INSTAGRAM ---
-    "IG Followers Mix (Less Drop)": 6086,
-    "IG Followers Indo (Real)": 5758,
-    "IG Likes (Non-Drop)": 6121,
-    "IG Views (Reels)": 5747,
+    "IG Followers Mix (Less Drop)": { "id": 6086, "harga": 10355 },
+    "IG Followers Indo (Real)":     { "id": 5758, "harga": 40091 },
+    "IG Likes (Non-Drop)":          { "id": 6121, "harga": 1999 },
+    "IG Views (Reels)":             { "id": 5747, "harga": 19 },
 
     # --- TIKTOK ---
-    "TikTok Likes": 5877,   
-    "TikTok Views (FYP)": 6132,   
-    "TikTok Shares": 5365,
-    "TikTok Favorit": 6053, 
-    "TikTok Followers": 5592, 
+    "TikTok Likes":       { "id": 5877, "harga": 237 },   
+    "TikTok Views (FYP)": { "id": 6132, "harga": 20 },   
+    "TikTok Shares":      { "id": 5365, "harga": 1552 },
+    "TikTok Favorit":     { "id": 6053, "harga": 182 }, 
+    
+    # ⚠️ TikTok Followers belum ada harga di list kamu, saya set 0 dulu
+    "TikTok Followers":   { "id": 5592, "harga": 14468 }, 
 }
 
 # --- 3. FUNGSI TEMBAK API MEDANPEDIA ---
@@ -124,7 +129,7 @@ try:
 
     st.markdown("---")
     
-    # --- 6. MANAJEMEN ORDER (TAB TERPISAH) ---
+    # --- 6. MANAJEMEN ORDER ---
     st.subheader("📋 Manajemen Order")
     
     tab_auto, tab_manual = st.tabs(["🤖 Mode Auto-Pilot", "✍️ Mode Manual"])
@@ -141,34 +146,39 @@ try:
             count_auto = 0
             for index, row in pending_df.iterrows():
                 nama_layanan = row.get(col_layanan, '')
-                id_pusat = MAPPING_LAYANAN.get(nama_layanan)
+                data_layanan = MAPPING_LAYANAN.get(nama_layanan) # Ambil Data Dict
                 
-                # --- 🔥 FIX LINK RUSAK DISINI 🔥 ---
-                # Mengubah 'https:&#x2F;&#x2F;' kembali menjadi 'https://'
+                # Bersihkan Link
                 raw_target = str(row.get(col_target, '-'))
-                clean_target = html.unescape(raw_target) 
-                # -----------------------------------
+                clean_target = html.unescape(raw_target)
 
-                if id_pusat:
+                if data_layanan:
                     count_auto += 1
+                    id_pusat = data_layanan['id']
+                    harga_pusat = data_layanan['harga']
+                    
+                    # 🔥 HITUNG MODAL OTOMATIS 🔥
+                    qty = int(row.get(col_jumlah, 0))
+                    estimasi_modal = math.ceil((qty / 1000) * harga_pusat) # Dibulatkan ke atas
+                    
                     with st.expander(f"🤖 AUTO: {nama_layanan} | {clean_target}"):
                         c1, c2 = st.columns([1, 1])
                         
                         with c1:
-                            st.write(f"**Target:** `{clean_target}`") # Tampilkan yg sudah bersih
-                            st.write(f"**Jumlah:** {row.get(col_jumlah)}")
-                            st.success(f"✅ ID Pusat: **{id_pusat}**")
+                            st.write(f"**Target:** `{clean_target}`")
+                            st.write(f"**Jumlah:** {qty}")
+                            st.caption(f"🆔 ID Pusat: {id_pusat} | 🏷️ Modal/1k: Rp {harga_pusat:,}")
                             
                         with c2:
-                            modal = st.number_input("Modal (Rp)", 0, step=100, key=f"auto_m_{index}")
+                            # Input otomatis terisi estimasi_modal
+                            modal = st.number_input("Modal Otomatis (Rp)", value=estimasi_modal, step=100, key=f"auto_m_{index}")
                             
                             if st.button("🚀 TEMBAK KE PUSAT", key=f"auto_btn_{index}"):
-                                if modal == 0:
-                                    st.warning("⚠️ Masukkan modal dulu!")
+                                if modal == 0 and harga_pusat > 0:
+                                    st.warning("⚠️ Cek modal lagi!")
                                 else:
                                     with st.spinner('Menghubungi MedanPedia...'):
-                                        # Gunakan clean_target saat kirim ke pusat
-                                        hasil = tembak_medanpedia(id_pusat, clean_target, row.get(col_jumlah))
+                                        hasil = tembak_medanpedia(id_pusat, clean_target, qty)
                                         
                                         if hasil.get('status') == True:
                                             order_id_pusat = hasil['data'].get('id', 'Unknown')
@@ -191,43 +201,48 @@ try:
                                             st.error(f"❌ Gagal Order: {pesan_error}")
             
             if count_auto == 0:
-                st.warning("Tidak ada orderan yang cocok dengan Mapping ID. Cek Tab Manual.")
+                st.warning("Tidak ada orderan yang cocok dengan Mapping ID.")
 
     # ========================================================
     # TAB 2: KHUSUS MANUAL
     # ========================================================
     with tab_manual:
-        st.warning("Hanya update status ke 'SUCCESS' TANPA order ke MedanPedia.")
+        st.warning("Update status ke 'SUCCESS' TANPA order ke MedanPedia.")
         
         if pending_df.empty:
             st.success("Aman! Tidak ada orderan pending.")
         else:
             for index, row in pending_df.iterrows():
                 
-                # --- FIX LINK JUGA DI TAB MANUAL ---
                 raw_target = str(row.get(col_target, '-'))
                 clean_target = html.unescape(raw_target)
-                # -----------------------------------
+                qty = int(row.get(col_jumlah, 0))
+                
+                # Coba hitung modal juga di manual kalau ada datanya
+                nama_layanan = row.get(col_layanan, '')
+                data_layanan = MAPPING_LAYANAN.get(nama_layanan)
+                modal_default = 0
+                if data_layanan:
+                    modal_default = math.ceil((qty / 1000) * data_layanan['harga'])
 
-                with st.expander(f"📝 MANUAL: {row.get(col_layanan, '-')}"):
+                with st.expander(f"📝 MANUAL: {nama_layanan}"):
                     c1, c2 = st.columns([1, 1])
                     
                     with c1:
                         st.write(f"**Target:** `{clean_target}`")
-                        st.write(f"**Jumlah:** {row.get(col_jumlah)}")
+                        st.write(f"**Jumlah:** {qty}")
                         
-                        # Info WA Customer
                         raw_wa = str(row.get(col_wa, '')).strip()
                         clean_wa = raw_wa.replace('-', '').replace(' ', '').replace('+', '').replace('.0', '')
                         if clean_wa.startswith('0'): clean_wa = '62' + clean_wa[1:]
                         elif clean_wa.startswith('8'): clean_wa = '62' + clean_wa
                         
                         if len(clean_wa) > 8:
-                             msg = f"Halo kak! Orderan *{row.get(col_layanan)}* sudah SUCCESS. Makasih! 🙏"
+                             msg = f"Halo kak! Orderan *{nama_layanan}* sudah SUCCESS. Makasih! 🙏"
                              st.link_button("💬 Chat WA", f"https://wa.me/{clean_wa}?text={urllib.parse.quote(msg)}")
 
                     with c2:
-                        modal = st.number_input("Modal (Rp)", 0, step=100, key=f"man_m_{index}")
+                        modal = st.number_input("Modal (Rp)", value=modal_default, step=100, key=f"man_m_{index}")
                         
                         if st.button("✅ UPDATE SHEET SAJA", key=f"man_btn_{index}"):
                             try:
