@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import urllib.parse # Library untuk bikin link WA
+import urllib.parse 
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="Ridho Store Admin", page_icon="🚀", layout="wide")
@@ -16,25 +16,22 @@ def clean_currency(value):
     except:
         return 0
 
-# --- KONEKSI KE GOOGLE SHEETS (VERSI ONLINE STABIL) ---
+# --- KONEKSI KE GOOGLE SHEETS ---
 def get_sheet_data():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    
-    # 1. Ambil Secrets
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
     except KeyError:
-        st.error("Error: Secrets belum disetting. Pastikan copy-paste TOML dengan benar.")
+        st.error("Error: Secrets belum disetting.")
         st.stop()
     
-    # 2. 🔥 Fix Private Key (Agar tidak error Incorrect Padding)
     if "private_key" in creds_dict:
         creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
     
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
     
-    # ID Sheet Kamu
+    # ID Sheet
     spreadsheet_id = "14zCestGTLmzP7KGymjyVtmsYxjPgZ44G6syQTVO0PHQ"
     sheet = client.open_by_key(spreadsheet_id).sheet1 
     data = sheet.get_all_records()
@@ -47,7 +44,6 @@ try:
     sheet, data = get_sheet_data()
     df = pd.DataFrame(data)
 
-    # Bersihkan Spasi Nama Kolom
     df.columns = df.columns.str.strip()
 
     # Mapping Kolom
@@ -58,25 +54,21 @@ try:
     col_status  = 'Status'
     col_modal   = 'Modal'
     col_profit  = 'Profit'
-    col_wa      = 'Nomor WhatsApp Anda' # Pastikan nama kolom ini sesuai di sheet
+    col_wa      = 'Nomor WhatsApp Anda' 
 
-    # Cek Kolom Wajib
     if col_status not in df.columns:
-        st.error(f"Kolom '{col_status}' tidak ditemukan di Google Sheet!")
+        st.error(f"Kolom '{col_status}' tidak ditemukan!")
         st.stop()
 
-    # Pemrosesan Data Angka
     df['clean_total'] = df[col_total].apply(clean_currency)
     
     for col in [col_modal, col_profit]:
         if col not in df.columns: df[col] = 0
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-    # Metrics
     total_omzet = df['clean_total'].sum()
     total_profit = df[col_profit].sum()
     
-    # Filter Pending
     pending_df = df[
         (df[col_status].str.strip().str.upper() == 'PENDING') | 
         (df[col_status].isna()) | 
@@ -104,19 +96,23 @@ try:
                     st.write(f"**Transfer:** Rp {clean_currency(row.get(col_total, '0')):,}")
                     st.caption(f"Metode: {row.get('Metode Pembayaran', '-')}")
                     
-                    # --- LOGIKA NOMOR WA ---
+                    # 🔥 FIX LOGIKA WA DISINI 🔥
                     raw_wa = str(row.get(col_wa, '')).strip()
-                    clean_wa = raw_wa.replace('-', '').replace(' ', '').replace('+', '')
+                    # Bersihkan spasi, strip, dan .0 (efek angka excel)
+                    clean_wa = raw_wa.replace('-', '').replace(' ', '').replace('+', '').replace('.0', '')
+                    
+                    # Logika deteksi 08 atau 8
                     if clean_wa.startswith('0'):
                         clean_wa = '62' + clean_wa[1:]
+                    elif clean_wa.startswith('8'):
+                        clean_wa = '62' + clean_wa
                     
-                    st.caption(f"📱 WA: {clean_wa}")
+                    st.caption(f"📱 WA: +{clean_wa}")
 
                 with c2:
                     st.write("### Aksi")
                     
-                    # 1. TOMBOL CHAT WA
-                    if clean_wa and len(clean_wa) > 5:
+                    if clean_wa and len(clean_wa) > 8:
                         nama_layanan = row.get(col_layanan, 'Layanan')
                         target_akun = row.get(col_target, '-')
                         
@@ -126,23 +122,19 @@ try:
                         
                         st.link_button("💬 Chat WA", link_wa)
                     else:
-                        st.warning("No WA Invalid")
+                        st.warning("No WA Tidak Valid")
 
                     st.write("---")
-
-                    # 2. INPUT MODAL & EKSEKUSI
+                    
                     modal = st.number_input("Modal (Rp)", min_value=0, step=100, key=f"m_{index}")
                     
                     if st.button("✅ SUKSESKAN", key=f"b_{index}"):
                         with st.spinner('Updating...'):
                             try:
                                 headers = [h.strip() for h in sheet.row_values(1)]
-                                r = index + 2 # Row di sheet (karena header row 1)
-                                
-                                # Hitung Cuan Real
+                                r = index + 2
                                 cuan = clean_currency(row.get(col_total, '0')) - modal
                                 
-                                # Update Sheet
                                 sheet.update_cell(r, headers.index(col_status)+1, "SUCCESS")
                                 sheet.update_cell(r, headers.index(col_modal)+1, modal)
                                 sheet.update_cell(r, headers.index(col_profit)+1, cuan)
