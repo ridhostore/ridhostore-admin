@@ -93,21 +93,59 @@ try:
     st.markdown("---")
     st.subheader("📋 Orderan Masuk")
 
+# ... (kode atas tetap sama) ...
+
     if pending_df.empty:
         st.success("Aman! Tidak ada orderan pending.")
     else:
+        # Import library untuk merapikan pesan WA (URL Encoding)
+        import urllib.parse
+
         for index, row in pending_df.iterrows():
             with st.expander(f"🛒 {row.get(col_layanan, 'Layanan')} | {row.get('Timestamp', '-')}"):
                 c1, c2 = st.columns([2, 1])
+                
                 with c1:
                     st.write(f"**Target:** `{row.get(col_target, '-')}`")
                     st.write(f"**Jumlah:** {row.get(col_jumlah, '-')}")
                     st.write(f"**Transfer:** Rp {clean_currency(row.get(col_total, '0')):,}")
                     st.caption(f"Metode: {row.get('Metode Pembayaran', '-')}")
+                    
+                    # --- LOGIKA NOMOR WA ---
+                    raw_wa = str(row.get('Nomor WhatsApp Anda', '')).strip()
+                    # Bersihkan karakter aneh (- atau spasi)
+                    clean_wa = raw_wa.replace('-', '').replace(' ', '').replace('+', '')
+                    # Ubah 08 jadi 628
+                    if clean_wa.startswith('0'):
+                        clean_wa = '62' + clean_wa[1:]
+                    
+                    st.caption(f"📱 WA Customer: {clean_wa}")
+
                 with c2:
+                    st.write("### Aksi")
+                    
+                    # 1. Tombol Chat WA (Fitur Baru)
+                    if clean_wa:
+                        nama_layanan = row.get(col_layanan, 'Layanan')
+                        target_akun = row.get(col_target, '-')
+                        
+                        # Pesan Template
+                        pesan = f"Halo kak! Orderan *{nama_layanan}* untuk target *{target_akun}* sudah *SUCCESS* diproses ya. Terima kasih telah order di Ridho Store! 🙏"
+                        
+                        # Encode pesan agar aman di URL (spasi jadi %20)
+                        pesan_encoded = urllib.parse.quote(pesan)
+                        link_wa = f"https://wa.me/{clean_wa}?text={pesan_encoded}"
+                        
+                        st.link_button("💬 Chat WA", link_wa)
+                    else:
+                        st.warning("No WA Tidak Valid")
+
+                    st.write("---")
+
+                    # 2. Input Modal & Sukseskan
                     modal = st.number_input("Modal (Rp)", min_value=0, step=100, key=f"m_{index}")
                     
-                    if st.button("✅ SUKSES", key=f"b_{index}"):
+                    if st.button("✅ SUKSESKAN", key=f"b_{index}"):
                         with st.spinner('Updating...'):
                             try:
                                 headers = [h.strip() for h in sheet.row_values(1)]
@@ -123,7 +161,3 @@ try:
                                 st.rerun()
                             except Exception as ex:
                                 st.error(f"Gagal: {ex}")
-
-except Exception as e:
-    st.error("TERJADI ERROR:")
-    st.code(e)
