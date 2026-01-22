@@ -4,6 +4,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import urllib.parse
 import requests 
+import html # <--- 1. LIBRARY BARU UNTUK BENERIN LINK
 
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="Ridho Store Admin", page_icon="🚀", layout="wide")
@@ -24,7 +25,7 @@ if input_pass != password_rahasia:
     st.stop()
 
 # ==========================================
-# 🔥 MAPPING LAYANAN MEDANPEDIA (FIX) 🔥
+# 🔥 MAPPING LAYANAN MEDANPEDIA 🔥
 # ==========================================
 MAPPING_LAYANAN = {
     # --- INSTAGRAM ---
@@ -126,11 +127,10 @@ try:
     # --- 6. MANAJEMEN ORDER (TAB TERPISAH) ---
     st.subheader("📋 Manajemen Order")
     
-    # KITA BUAT 2 TAB DISINI
     tab_auto, tab_manual = st.tabs(["🤖 Mode Auto-Pilot", "✍️ Mode Manual"])
 
     # ========================================================
-    # TAB 1: KHUSUS AUTO ORDER (Hanya yg punya ID Mapping)
+    # TAB 1: KHUSUS AUTO ORDER
     # ========================================================
     with tab_auto:
         st.info("Tab ini KHUSUS untuk menembak order ke MedanPedia secara otomatis.")
@@ -138,41 +138,42 @@ try:
         if pending_df.empty:
             st.success("Tidak ada orderan pending.")
         else:
-            # Hitung ada berapa yg bisa di-auto
             count_auto = 0
-            
             for index, row in pending_df.iterrows():
                 nama_layanan = row.get(col_layanan, '')
                 id_pusat = MAPPING_LAYANAN.get(nama_layanan)
                 
-                # HANYA TAMPILKAN JIKA PUNYA ID PUSAT
+                # --- 🔥 FIX LINK RUSAK DISINI 🔥 ---
+                # Mengubah 'https:&#x2F;&#x2F;' kembali menjadi 'https://'
+                raw_target = str(row.get(col_target, '-'))
+                clean_target = html.unescape(raw_target) 
+                # -----------------------------------
+
                 if id_pusat:
                     count_auto += 1
-                    with st.expander(f"🤖 AUTO: {nama_layanan} | {row.get(col_target, '-')}"):
+                    with st.expander(f"🤖 AUTO: {nama_layanan} | {clean_target}"):
                         c1, c2 = st.columns([1, 1])
                         
                         with c1:
-                            st.write(f"**Target:** `{row.get(col_target)}`")
+                            st.write(f"**Target:** `{clean_target}`") # Tampilkan yg sudah bersih
                             st.write(f"**Jumlah:** {row.get(col_jumlah)}")
-                            st.success(f"✅ ID Pusat Terdeteksi: **{id_pusat}**")
+                            st.success(f"✅ ID Pusat: **{id_pusat}**")
                             
                         with c2:
                             modal = st.number_input("Modal (Rp)", 0, step=100, key=f"auto_m_{index}")
                             
-                            # TOMBOL EKSEKUSI API
                             if st.button("🚀 TEMBAK KE PUSAT", key=f"auto_btn_{index}"):
                                 if modal == 0:
-                                    st.warning("⚠️ Masukkan modal dulu agar profit terhitung!")
+                                    st.warning("⚠️ Masukkan modal dulu!")
                                 else:
                                     with st.spinner('Menghubungi MedanPedia...'):
-                                        # 1. TEMBAK API
-                                        hasil = tembak_medanpedia(id_pusat, row.get(col_target), row.get(col_jumlah))
+                                        # Gunakan clean_target saat kirim ke pusat
+                                        hasil = tembak_medanpedia(id_pusat, clean_target, row.get(col_jumlah))
                                         
                                         if hasil.get('status') == True:
                                             order_id_pusat = hasil['data'].get('id', 'Unknown')
                                             st.toast(f"✅ Sukses! Order ID: {order_id_pusat}")
                                             
-                                            # 2. UPDATE SHEET
                                             try:
                                                 headers = [h.strip() for h in sheet.row_values(1)]
                                                 r = index + 2
@@ -181,7 +182,7 @@ try:
                                                 sheet.update_cell(r, headers.index(col_status)+1, "SUCCESS")
                                                 sheet.update_cell(r, headers.index(col_modal)+1, modal)
                                                 sheet.update_cell(r, headers.index(col_profit)+1, cuan)
-                                                st.success(f"Order {order_id_pusat} berhasil dicatat!")
+                                                st.success(f"Order {order_id_pusat} Berhasil!")
                                                 st.rerun()
                                             except Exception as ex:
                                                 st.error(f"Error Update Sheet: {ex}")
@@ -190,23 +191,29 @@ try:
                                             st.error(f"❌ Gagal Order: {pesan_error}")
             
             if count_auto == 0:
-                st.warning("Ada orderan pending, tapi TIDAK ADA yang cocok dengan Mapping ID. Silakan cek Tab Manual.")
+                st.warning("Tidak ada orderan yang cocok dengan Mapping ID. Cek Tab Manual.")
 
     # ========================================================
-    # TAB 2: KHUSUS MANUAL (Semua Orderan Muncul)
+    # TAB 2: KHUSUS MANUAL
     # ========================================================
     with tab_manual:
-        st.warning("Tab ini hanya untuk update status ke 'SUCCESS' di Google Sheet TANPA order ke MedanPedia.")
+        st.warning("Hanya update status ke 'SUCCESS' TANPA order ke MedanPedia.")
         
         if pending_df.empty:
             st.success("Aman! Tidak ada orderan pending.")
         else:
             for index, row in pending_df.iterrows():
+                
+                # --- FIX LINK JUGA DI TAB MANUAL ---
+                raw_target = str(row.get(col_target, '-'))
+                clean_target = html.unescape(raw_target)
+                # -----------------------------------
+
                 with st.expander(f"📝 MANUAL: {row.get(col_layanan, '-')}"):
                     c1, c2 = st.columns([1, 1])
                     
                     with c1:
-                        st.write(f"**Target:** `{row.get(col_target)}`")
+                        st.write(f"**Target:** `{clean_target}`")
                         st.write(f"**Jumlah:** {row.get(col_jumlah)}")
                         
                         # Info WA Customer
@@ -222,7 +229,6 @@ try:
                     with c2:
                         modal = st.number_input("Modal (Rp)", 0, step=100, key=f"man_m_{index}")
                         
-                        # TOMBOL MANUAL
                         if st.button("✅ UPDATE SHEET SAJA", key=f"man_btn_{index}"):
                             try:
                                 headers = [h.strip() for h in sheet.row_values(1)]
