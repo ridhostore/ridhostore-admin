@@ -29,12 +29,25 @@ if input_pass != password_rahasia:
 # Format: "Nama Di Google Form" : ID_ANGKA_MEDANPEDIA
 # Cek ID di menu 'Daftar Layanan' MedanPedia
 
+# ==========================================
+# 🔥 MAPPING LAYANAN MEDANPEDIA (FIX) 🔥
+# ==========================================
+# Kiri: Nama persis di Google Form/Pricelist (Customer)
+# Kanan: ID Layanan dari MedanPedia (Modal)
+
 MAPPING_LAYANAN = {
-    # GANTI ANGKA INI DENGAN ID ASLI DARI MEDANPEDIA
-    "Followers Instagram Murah": 2541,  
-    "Likes Instagram Fast": 1120,
-    "TikTok Followers": 3310,
-    "Subscriber Youtube": 550,
+    # --- INSTAGRAM ---
+    "Followers (Mix Account - Less Drop)": 6086,
+    "Followers (Indonesia Bot - No Drop)": 5758,
+    "Instagram Likes (Mix Account)": 6121,
+    "Instagram Views": 5747,
+
+    # --- TIKTOK ---
+    "TikTok Likes": 5877,   # Pakai yang ID 5877 (Bot)
+    "TikTok Views": 6132,   # Pakai yang ID 6132 (Low Drop)
+    "TikTok Shares": 5365,
+    "TikTok Favorit": 6053, # TikTok Save = Favorit
+    "TikTok Followers": 5592, 
 }
 
 # --- 3. FUNGSI TEMBAK API MEDANPEDIA ---
@@ -212,3 +225,4 @@ try:
 except Exception as e:
     st.error("TERJADI ERROR:")
     st.write(e)
+
