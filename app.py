@@ -5,7 +5,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 import urllib.parse
 import requests 
 import html
-import math # Library untuk pembulatan angka
+import math 
 
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="Ridho Store Admin", page_icon="🚀", layout="wide")
@@ -28,26 +28,43 @@ if input_pass != password_rahasia:
 # =================================================================
 # 🔥 MAPPING LAYANAN & HARGA MODAL (LOGIKA BARU) 🔥
 # =================================================================
-# Struktur Baru: "Nama": {"id": ID_MEDANPEDIA, "harga": HARGA_PER_1000}
-
 MAPPING_LAYANAN = {
     # --- INSTAGRAM ---
-    "IG Followers Mix (Less Drop)": { "id": 6086, "harga": 10355 },
+    "IG Followers Mix (Less Drop)": { "id": 6081, "harga": 20000 },
     "IG Followers Indo (Real)":     { "id": 5758, "harga": 40091 },
     "IG Likes (Non-Drop)":          { "id": 6121, "harga": 1999 },
-    "IG Views (Reels)":             { "id": 5747, "harga": 19 },
+    "IG Views (Reels)":             { "id": 5747, "harga": 182 },
 
     # --- TIKTOK ---
     "TikTok Likes":       { "id": 5877, "harga": 237 },   
     "TikTok Views (FYP)": { "id": 6132, "harga": 20 },   
     "TikTok Shares":      { "id": 5365, "harga": 1552 },
     "TikTok Favorit":     { "id": 6053, "harga": 182 }, 
-    
-    # ⚠️ TikTok Followers belum ada harga di list kamu, saya set 0 dulu
     "TikTok Followers":   { "id": 5592, "harga": 14468 }, 
 }
 
-# --- 3. FUNGSI TEMBAK API MEDANPEDIA ---
+# --- 3. FUNGSI KHUSUS MEDANPEDIA ---
+def cek_saldo_medanpedia():
+    """Mengecek sisa saldo di akun MedanPedia"""
+    try:
+        # Endpoint khusus profile/saldo
+        url_profile = "https://api.medanpedia.co.id/profile"
+        api_id = st.secrets["medanpedia"]["api_id"]
+        api_key = st.secrets["medanpedia"]["api_key"]
+        
+        payload = {'api_id': api_id, 'api_key': api_key}
+        
+        response = requests.post(url_profile, data=payload)
+        hasil = response.json()
+        
+        if hasil.get('status') == True:
+            # Ambil data balance
+            return int(float(hasil['data']['balance']))
+        else:
+            return 0
+    except:
+        return 0
+
 def tembak_medanpedia(service_id, target_link, jumlah):
     try:
         url = st.secrets["medanpedia"]["url"]
@@ -91,6 +108,19 @@ def get_sheet_data():
 
 # --- 5. DASHBOARD UTAMA ---
 st.title("🚀 Ridho Store Auto-Pilot")
+
+# 🔥 FITUR BARU: TAMPILKAN SALDO DI SIDEBAR 🔥
+with st.sidebar:
+    st.markdown("---")
+    st.caption("🏦 Info Pusat")
+    saldo_pusat = cek_saldo_medanpedia()
+    
+    if saldo_pusat < 10000:
+        st.error(f"Sisa Saldo: Rp {saldo_pusat:,}")
+        st.warning("⚠️ Saldo Menipis! Segera Deposit.")
+    else:
+        st.success(f"Sisa Saldo: Rp {saldo_pusat:,}")
+    st.markdown("---")
 
 try:
     sheet, data = get_sheet_data()
@@ -146,9 +176,8 @@ try:
             count_auto = 0
             for index, row in pending_df.iterrows():
                 nama_layanan = row.get(col_layanan, '')
-                data_layanan = MAPPING_LAYANAN.get(nama_layanan) # Ambil Data Dict
+                data_layanan = MAPPING_LAYANAN.get(nama_layanan) 
                 
-                # Bersihkan Link
                 raw_target = str(row.get(col_target, '-'))
                 clean_target = html.unescape(raw_target)
 
@@ -157,9 +186,9 @@ try:
                     id_pusat = data_layanan['id']
                     harga_pusat = data_layanan['harga']
                     
-                    # 🔥 HITUNG MODAL OTOMATIS 🔥
+                    # Hitung Modal Otomatis
                     qty = int(row.get(col_jumlah, 0))
-                    estimasi_modal = math.ceil((qty / 1000) * harga_pusat) # Dibulatkan ke atas
+                    estimasi_modal = math.ceil((qty / 1000) * harga_pusat) 
                     
                     with st.expander(f"🤖 AUTO: {nama_layanan} | {clean_target}"):
                         c1, c2 = st.columns([1, 1])
@@ -170,11 +199,13 @@ try:
                             st.caption(f"🆔 ID Pusat: {id_pusat} | 🏷️ Modal/1k: Rp {harga_pusat:,}")
                             
                         with c2:
-                            # Input otomatis terisi estimasi_modal
                             modal = st.number_input("Modal Otomatis (Rp)", value=estimasi_modal, step=100, key=f"auto_m_{index}")
                             
                             if st.button("🚀 TEMBAK KE PUSAT", key=f"auto_btn_{index}"):
-                                if modal == 0 and harga_pusat > 0:
+                                # Cek Saldo Dulu biar aman
+                                if saldo_pusat < modal:
+                                    st.error("❌ SALDO MEDANPEDIA TIDAK CUKUP! Silakan deposit dulu.")
+                                elif modal == 0 and harga_pusat > 0:
                                     st.warning("⚠️ Cek modal lagi!")
                                 else:
                                     with st.spinner('Menghubungi MedanPedia...'):
@@ -218,7 +249,6 @@ try:
                 clean_target = html.unescape(raw_target)
                 qty = int(row.get(col_jumlah, 0))
                 
-                # Coba hitung modal juga di manual kalau ada datanya
                 nama_layanan = row.get(col_layanan, '')
                 data_layanan = MAPPING_LAYANAN.get(nama_layanan)
                 modal_default = 0
