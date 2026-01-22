@@ -3,7 +3,7 @@ import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import urllib.parse
-import requests # Wajib ada di requirements.txt
+import requests 
 
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="Ridho Store Admin", page_icon="🚀", layout="wide")
@@ -24,41 +24,30 @@ if input_pass != password_rahasia:
     st.stop()
 
 # ==========================================
-# 🔥 MAPPING LAYANAN MEDANPEDIA (EDIT DISINI) 🔥
-# ==========================================
-# Format: "Nama Di Google Form" : ID_ANGKA_MEDANPEDIA
-# Cek ID di menu 'Daftar Layanan' MedanPedia
-
-# ==========================================
 # 🔥 MAPPING LAYANAN MEDANPEDIA (FIX) 🔥
 # ==========================================
-# Kiri: Nama persis di Google Form/Pricelist (Customer)
-# Kanan: ID Layanan dari MedanPedia (Modal)
-
 MAPPING_LAYANAN = {
     # --- INSTAGRAM ---
-    "Followers (Mix Account - Less Drop)": 6086,
-    "Followers (Indonesia Bot - No Drop)": 5758,
-    "Instagram Likes (Mix Account)": 6121,
-    "Instagram Views": 5747,
+    "IG Followers Mix (Less Drop)": 6086,
+    "IG Followers Indo (Real)": 5758,
+    "IG Likes (Non-Drop)": 6121,
+    "IG Views (Reels)": 5747,
 
     # --- TIKTOK ---
-    "TikTok Likes": 5877,   # Pakai yang ID 5877 (Bot)
-    "TikTok Views": 6132,   # Pakai yang ID 6132 (Low Drop)
+    "TikTok Likes": 5877,   
+    "TikTok Views (FYP)": 6132,   
     "TikTok Shares": 5365,
-    "TikTok Favorit": 6053, # TikTok Save = Favorit
+    "TikTok Favorit": 6053, 
     "TikTok Followers": 5592, 
 }
 
 # --- 3. FUNGSI TEMBAK API MEDANPEDIA ---
 def tembak_medanpedia(service_id, target_link, jumlah):
     try:
-        # Ambil credentials dari Secrets
         url = st.secrets["medanpedia"]["url"]
         api_id = st.secrets["medanpedia"]["api_id"]
         api_key = st.secrets["medanpedia"]["api_key"]
         
-        # Format Data Sesuai Dokumentasi MedanPedia
         payload = {
             'api_id': api_id,
             'api_key': api_key,
@@ -67,17 +56,13 @@ def tembak_medanpedia(service_id, target_link, jumlah):
             'quantity': jumlah
         }
         
-        # Kirim Request (POST)
         response = requests.post(url, data=payload)
-        hasil = response.json() 
-        
-        # MedanPedia biasanya return: {'status': True, 'data': {'id': '12345'}}
-        return hasil
+        return response.json() 
         
     except Exception as e:
         return {"status": False, "data": str(e)}
 
-# --- 4. FUNGSI PENDUKUNG (Google Sheet & Currency) ---
+# --- 4. FUNGSI PENDUKUNG ---
 def clean_currency(value):
     try:
         if isinstance(value, str):
@@ -138,91 +123,121 @@ try:
 
     st.markdown("---")
     
-    # --- 6. ORDER LIST ---
-    st.subheader("📋 Daftar Order Pending")
+    # --- 6. MANAJEMEN ORDER (TAB TERPISAH) ---
+    st.subheader("📋 Manajemen Order")
+    
+    # KITA BUAT 2 TAB DISINI
+    tab_auto, tab_manual = st.tabs(["🤖 Mode Auto-Pilot", "✍️ Mode Manual"])
 
-    if pending_df.empty:
-        st.success("Aman! Tidak ada orderan pending.")
-    else:
-        for index, row in pending_df.iterrows():
-            with st.expander(f"🛒 {row.get(col_layanan, '-')}"):
-                c1, c2 = st.columns(2)
+    # ========================================================
+    # TAB 1: KHUSUS AUTO ORDER (Hanya yg punya ID Mapping)
+    # ========================================================
+    with tab_auto:
+        st.info("Tab ini KHUSUS untuk menembak order ke MedanPedia secara otomatis.")
+        
+        if pending_df.empty:
+            st.success("Tidak ada orderan pending.")
+        else:
+            # Hitung ada berapa yg bisa di-auto
+            count_auto = 0
+            
+            for index, row in pending_df.iterrows():
+                nama_layanan = row.get(col_layanan, '')
+                id_pusat = MAPPING_LAYANAN.get(nama_layanan)
                 
-                nama_layanan_user = row.get(col_layanan, '')
-                target = row.get(col_target, '-')
-                jumlah = row.get(col_jumlah, 0)
-                
-                # Cek ID MedanPedia
-                id_pusat = MAPPING_LAYANAN.get(nama_layanan_user)
-
-                with c1:
-                    st.write(f"**Target:** `{target}`")
-                    st.write(f"**Jumlah:** {jumlah}")
-                    
-                    if id_pusat:
-                        st.success(f"✅ Auto-Connect MedanPedia (ID: {id_pusat})")
-                    else:
-                        st.warning("⚠️ ID tidak ditemukan di Mapping (Mode Manual)")
-                    
-                    # Info WA
-                    raw_wa = str(row.get(col_wa, '')).strip()
-                    clean_wa = raw_wa.replace('-', '').replace(' ', '').replace('+', '').replace('.0', '')
-                    if clean_wa.startswith('0'): clean_wa = '62' + clean_wa[1:]
-                    elif clean_wa.startswith('8'): clean_wa = '62' + clean_wa
-                    
-                    if len(clean_wa) > 8:
-                         msg = f"Halo kak! Orderan *{nama_layanan_user}* sudah diproses. Thanks! 🙏"
-                         st.link_button("💬 Chat WA", f"https://wa.me/{clean_wa}?text={urllib.parse.quote(msg)}")
-
-                with c2:
-                    st.write("### Eksekusi")
-                    modal = st.number_input("Modal (Rp)", 0, step=100, key=f"m_{index}")
-                    
-                    # TOMBOL AUTO ORDER
-                    tombol_label = "🚀 ORDER KE PUSAT & UPDATE" if id_pusat else "✅ UPDATE MANUAL SAJA"
-                    
-                    if st.button(tombol_label, key=f"btn_{index}"):
-                        if modal == 0:
-                            st.warning("Isi modal dulu bos!")
-                        else:
-                            with st.spinner('Menghubungi MedanPedia...'):
-                                order_sukses = False
-                                pesan_error = ""
-
-                                # 1. TEMBAK API (Jika ID Ada)
-                                if id_pusat:
-                                    hasil = tembak_medanpedia(id_pusat, target, jumlah)
-                                    
-                                    # Cek status respon dari MedanPedia (True/False)
-                                    if hasil.get('status') == True:
-                                        order_id_pusat = hasil['data'].get('id', 'Unknown')
-                                        st.toast(f"✅ Sukses Order! Order ID Pusat: {order_id_pusat}")
-                                        order_sukses = True
-                                    else:
-                                        pesan_error = hasil.get('data', 'Unknown Error')
-                                        st.error(f"❌ Gagal Order ke Pusat: {pesan_error}")
+                # HANYA TAMPILKAN JIKA PUNYA ID PUSAT
+                if id_pusat:
+                    count_auto += 1
+                    with st.expander(f"🤖 AUTO: {nama_layanan} | {row.get(col_target, '-')}"):
+                        c1, c2 = st.columns([1, 1])
+                        
+                        with c1:
+                            st.write(f"**Target:** `{row.get(col_target)}`")
+                            st.write(f"**Jumlah:** {row.get(col_jumlah)}")
+                            st.success(f"✅ ID Pusat Terdeteksi: **{id_pusat}**")
+                            
+                        with c2:
+                            modal = st.number_input("Modal (Rp)", 0, step=100, key=f"auto_m_{index}")
+                            
+                            # TOMBOL EKSEKUSI API
+                            if st.button("🚀 TEMBAK KE PUSAT", key=f"auto_btn_{index}"):
+                                if modal == 0:
+                                    st.warning("⚠️ Masukkan modal dulu agar profit terhitung!")
                                 else:
-                                    # Jika tidak ada ID, langsung sukseskan manual
-                                    order_sukses = True
-                                    st.toast("Update Manual Berhasil")
+                                    with st.spinner('Menghubungi MedanPedia...'):
+                                        # 1. TEMBAK API
+                                        hasil = tembak_medanpedia(id_pusat, row.get(col_target), row.get(col_jumlah))
+                                        
+                                        if hasil.get('status') == True:
+                                            order_id_pusat = hasil['data'].get('id', 'Unknown')
+                                            st.toast(f"✅ Sukses! Order ID: {order_id_pusat}")
+                                            
+                                            # 2. UPDATE SHEET
+                                            try:
+                                                headers = [h.strip() for h in sheet.row_values(1)]
+                                                r = index + 2
+                                                cuan = clean_currency(row.get(col_total, '0')) - modal
+                                                
+                                                sheet.update_cell(r, headers.index(col_status)+1, "SUCCESS")
+                                                sheet.update_cell(r, headers.index(col_modal)+1, modal)
+                                                sheet.update_cell(r, headers.index(col_profit)+1, cuan)
+                                                st.success(f"Order {order_id_pusat} berhasil dicatat!")
+                                                st.rerun()
+                                            except Exception as ex:
+                                                st.error(f"Error Update Sheet: {ex}")
+                                        else:
+                                            pesan_error = hasil.get('data', 'Unknown Error')
+                                            st.error(f"❌ Gagal Order: {pesan_error}")
+            
+            if count_auto == 0:
+                st.warning("Ada orderan pending, tapi TIDAK ADA yang cocok dengan Mapping ID. Silakan cek Tab Manual.")
 
-                                # 2. UPDATE SHEET (Hanya jika order sukses/manual)
-                                if order_sukses:
-                                    try:
-                                        headers = [h.strip() for h in sheet.row_values(1)]
-                                        r = index + 2
-                                        cuan = clean_currency(row.get(col_total, '0')) - modal
-                                        
-                                        sheet.update_cell(r, headers.index(col_status)+1, "SUCCESS")
-                                        sheet.update_cell(r, headers.index(col_modal)+1, modal)
-                                        sheet.update_cell(r, headers.index(col_profit)+1, cuan)
-                                        
-                                        st.success("Data Tersimpan!")
-                                        st.rerun()
-                                    except Exception as ex:
-                                        st.error(f"Gagal Update Sheet: {ex}")
+    # ========================================================
+    # TAB 2: KHUSUS MANUAL (Semua Orderan Muncul)
+    # ========================================================
+    with tab_manual:
+        st.warning("Tab ini hanya untuk update status ke 'SUCCESS' di Google Sheet TANPA order ke MedanPedia.")
+        
+        if pending_df.empty:
+            st.success("Aman! Tidak ada orderan pending.")
+        else:
+            for index, row in pending_df.iterrows():
+                with st.expander(f"📝 MANUAL: {row.get(col_layanan, '-')}"):
+                    c1, c2 = st.columns([1, 1])
+                    
+                    with c1:
+                        st.write(f"**Target:** `{row.get(col_target)}`")
+                        st.write(f"**Jumlah:** {row.get(col_jumlah)}")
+                        
+                        # Info WA Customer
+                        raw_wa = str(row.get(col_wa, '')).strip()
+                        clean_wa = raw_wa.replace('-', '').replace(' ', '').replace('+', '').replace('.0', '')
+                        if clean_wa.startswith('0'): clean_wa = '62' + clean_wa[1:]
+                        elif clean_wa.startswith('8'): clean_wa = '62' + clean_wa
+                        
+                        if len(clean_wa) > 8:
+                             msg = f"Halo kak! Orderan *{row.get(col_layanan)}* sudah SUCCESS. Makasih! 🙏"
+                             st.link_button("💬 Chat WA", f"https://wa.me/{clean_wa}?text={urllib.parse.quote(msg)}")
+
+                    with c2:
+                        modal = st.number_input("Modal (Rp)", 0, step=100, key=f"man_m_{index}")
+                        
+                        # TOMBOL MANUAL
+                        if st.button("✅ UPDATE SHEET SAJA", key=f"man_btn_{index}"):
+                            try:
+                                headers = [h.strip() for h in sheet.row_values(1)]
+                                r = index + 2
+                                cuan = clean_currency(row.get(col_total, '0')) - modal
+                                
+                                sheet.update_cell(r, headers.index(col_status)+1, "SUCCESS")
+                                sheet.update_cell(r, headers.index(col_modal)+1, modal)
+                                sheet.update_cell(r, headers.index(col_profit)+1, cuan)
+                                
+                                st.success("Data berhasil diupdate manual!")
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"Gagal Update: {ex}")
 
 except Exception as e:
     st.error("TERJADI ERROR:")
     st.write(e)
-
