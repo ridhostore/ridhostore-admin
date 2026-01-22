@@ -38,7 +38,6 @@ def get_sheet_data():
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
     
-    # ID Sheet
     spreadsheet_id = "14zCestGTLmzP7KGymjyVtmsYxjPgZ44G6syQTVO0PHQ"
     sheet = client.open_by_key(spreadsheet_id).sheet1 
     data = sheet.get_all_records()
@@ -62,17 +61,20 @@ try:
     col_modal   = 'Modal'
     col_profit  = 'Profit'
     col_wa      = 'Nomor WhatsApp Anda' 
+    col_waktu   = 'Timestamp' # Kolom waktu dari Google Form
 
     if col_status not in df.columns:
         st.error(f"Kolom '{col_status}' tidak ditemukan!")
         st.stop()
 
+    # Bersihkan Data Angka
     df['clean_total'] = df[col_total].apply(clean_currency)
     
     for col in [col_modal, col_profit]:
         if col not in df.columns: df[col] = 0
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
+    # Metrics Utama
     total_omzet = df['clean_total'].sum()
     total_profit = df[col_profit].sum()
     
@@ -82,12 +84,45 @@ try:
         (df[col_status] == '')
     ]
 
+    # TAMPILAN METRICS (ANGKA BESAR)
     c1, c2, c3 = st.columns(3)
     c1.metric("💰 Omzet", f"Rp {total_omzet:,.0f}")
     c2.metric("💸 Profit", f"Rp {total_profit:,.0f}")
     c3.metric("🔥 Pending", f"{len(pending_df)}", delta_color="inverse")
 
     st.markdown("---")
+
+    # ==========================================
+    # 🔥 FITUR BARU: DASHBOARD GRAFIK 🔥
+    # ==========================================
+    
+    # Pastikan data tidak kosong sebelum bikin grafik
+    if not df.empty:
+        st.subheader("📊 Analisis Toko")
+        
+        # 1. SIAPKAN DATA WAKTU
+        # Mengubah text 'Timestamp' jadi format Tanggal yang dimengerti Python
+        df['Tanggal'] = pd.to_datetime(df[col_waktu], dayfirst=True, errors='coerce').dt.date
+        
+        col_grafik1, col_grafik2 = st.columns(2)
+
+        with col_grafik1:
+            st.caption("📈 Tren Omzet & Profit Harian")
+            # Grouping data berdasarkan tanggal
+            daily_stats = df.groupby('Tanggal')[['clean_total', col_profit]].sum()
+            # Ganti nama kolom biar chartnya bagus
+            daily_stats = daily_stats.rename(columns={'clean_total': 'Omzet', col_profit: 'Cuan'})
+            st.line_chart(daily_stats)
+
+        with col_grafik2:
+            st.caption("🏆 Layanan Terlaris (Top 5)")
+            # Hitung jumlah order per layanan
+            top_layanan = df[col_layanan].value_counts().head(5)
+            st.bar_chart(top_layanan)
+            
+    st.markdown("---")
+    # ==========================================
+
     st.subheader("📋 Orderan Masuk")
 
     if pending_df.empty:
@@ -103,12 +138,10 @@ try:
                     st.write(f"**Transfer:** Rp {clean_currency(row.get(col_total, '0')):,}")
                     st.caption(f"Metode: {row.get('Metode Pembayaran', '-')}")
                     
-                    # 🔥 FIX LOGIKA WA DISINI 🔥
+                    # Logika WA
                     raw_wa = str(row.get(col_wa, '')).strip()
-                    # Bersihkan spasi, strip, dan .0 (efek angka excel)
                     clean_wa = raw_wa.replace('-', '').replace(' ', '').replace('+', '').replace('.0', '')
                     
-                    # Logika deteksi 08 atau 8
                     if clean_wa.startswith('0'):
                         clean_wa = '62' + clean_wa[1:]
                     elif clean_wa.startswith('8'):
@@ -154,4 +187,3 @@ try:
 except Exception as e:
     st.error("TERJADI ERROR FATAL:")
     st.code(e)
-
