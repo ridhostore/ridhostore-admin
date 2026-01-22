@@ -6,6 +6,13 @@ import urllib.parse
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="Ridho Store Admin", page_icon="🚀", layout="wide")
+# --- SATPAM / LOGIN SYSTEM ---
+password_rahasia = st.secrets["auth"]["password"]
+input_pass = st.sidebar.text_input("🔑 Masukkan Password Admin", type="password")
+
+if input_pass != password_rahasia:
+    st.error("⛔ Akses Ditolak! Masukkan password di menu sebelah kiri.")
+    st.stop() # Berhenti disini, jangan muat dashboard bawah
 
 # --- FUNGSI BERSIH DUIT ---
 def clean_currency(value):
@@ -147,3 +154,4 @@ try:
 except Exception as e:
     st.error("TERJADI ERROR FATAL:")
     st.code(e)
+
